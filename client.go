@@ -171,7 +171,6 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 		</d:propfind>`,
 		&response{},
 		parse)
-
 	if err != nil {
 		if _, ok := err.(*os.PathError); !ok {
 			err = NewPathErrorErr("ReadDir", path, err)
@@ -223,11 +222,13 @@ func (c *Client) Stat(path string) (os.FileInfo, error) {
 		</d:propfind>`,
 		&response{},
 		parse)
-
 	if err != nil {
 		if _, ok := err.(*os.PathError); !ok {
 			err = NewPathErrorErr("ReadDir", path, err)
 		}
+	}
+	if f == nil {
+		return nil, os.ErrNotExist
 	}
 	return f, err
 }
@@ -417,7 +418,6 @@ func (c *Client) Write(path string, data []byte, _ os.FileMode) (err error) {
 
 // WriteStream writes a stream
 func (c *Client) WriteStream(path string, stream io.Reader, _ os.FileMode) (err error) {
-
 	err = c.createParentCollection(path)
 	if err != nil {
 		return err
