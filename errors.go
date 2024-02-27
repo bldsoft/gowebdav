@@ -3,6 +3,7 @@ package gowebdav
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 )
 
@@ -41,10 +42,14 @@ func IsErrNotFound(err error) bool {
 }
 
 func NewPathError(op string, path string, statusCode int) error {
+	var statusErr error = StatusError{statusCode}
+	if statusCode == http.StatusNotFound {
+		statusErr = errors.Join(statusErr, os.ErrNotExist)
+	}
 	return &os.PathError{
 		Op:   op,
 		Path: path,
-		Err:  StatusError{statusCode},
+		Err:  statusErr,
 	}
 }
 
