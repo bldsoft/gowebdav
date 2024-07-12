@@ -118,7 +118,7 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 	path = FixSlashes(path)
 	files := make([]os.FileInfo, 0)
 	skipSelf := true
-	parse := func(resp interface{}) error {
+	parse := func(resp interface{}) (err error) {
 		r := resp.(*response)
 
 		if skipSelf {
@@ -127,7 +127,12 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 				r.Props = nil
 				return nil
 			}
-			return NewPathError("ReadDir", path, 405)
+
+			if p := getProps(r, "404"); p != nil {
+				return NewPathError("ReadDir", path, http.StatusNotFound)
+			}
+
+			return NewPathErrorErr("ReadDir", path, fmt.Errorf("resp %v", resp))
 		}
 
 		if p := getProps(r, "200"); p != nil {
@@ -152,10 +157,12 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 			}
 
 			files = append(files, *f)
+		} else if p := getProps(r, "404"); p != nil {
+			err = NewPathError("ReadDir", path, http.StatusNotFound)
 		}
 
 		r.Props = nil
-		return nil
+		return err
 	}
 
 	err := c.propfind(path, false,
@@ -182,31 +189,36 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 // Stat returns the file stats for a specified path
 func (c *Client) Stat(path string) (os.FileInfo, error) {
 	var f *File
-	parse := func(resp interface{}) error {
+	parse := func(resp interface{}) (err error) {
 		r := resp.(*response)
-		if p := getProps(r, "200"); p != nil && f == nil {
-			f = new(File)
-			f.name = p.Name
-			f.path = path
-			f.etag = p.ETag
-			f.contentType = p.ContentType
 
-			if p.Type.Local == "collection" {
-				if !strings.HasSuffix(f.path, "/") {
-					f.path += "/"
+		if p := getProps(r, "200"); p != nil {
+			if f == nil {
+				f = new(File)
+				f.name = p.Name
+				f.path = path
+				f.etag = p.ETag
+				f.contentType = p.ContentType
+
+				if p.Type.Local == "collection" {
+					if !strings.HasSuffix(f.path, "/") {
+						f.path += "/"
+					}
+					f.size = 0
+					f.modified = parseModified(&p.Modified)
+					f.isdir = true
+				} else {
+					f.size = parseInt64(&p.Size)
+					f.modified = parseModified(&p.Modified)
+					f.isdir = false
 				}
-				f.size = 0
-				f.modified = parseModified(&p.Modified)
-				f.isdir = true
-			} else {
-				f.size = parseInt64(&p.Size)
-				f.modified = parseModified(&p.Modified)
-				f.isdir = false
 			}
+		} else if p := getProps(r, "404"); p != nil {
+			err = NewPathError("Stat", path, http.StatusNotFound)
 		}
 
 		r.Props = nil
-		return nil
+		return err
 	}
 
 	err := c.propfind(path, true,
@@ -224,7 +236,7 @@ func (c *Client) Stat(path string) (os.FileInfo, error) {
 		parse)
 	if err != nil {
 		if _, ok := err.(*os.PathError); !ok {
-			err = NewPathErrorErr("ReadDir", path, err)
+			err = NewPathErrorErr("Stat", path, err)
 		}
 	}
 	if f == nil {
