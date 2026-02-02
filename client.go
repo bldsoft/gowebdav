@@ -241,7 +241,7 @@ func (c *Client) Stat(path string) (os.FileInfo, error) {
 		}
 	}
 	if f == nil {
-		return nil, os.ErrNotExist
+		return nil, NewPathError("Stat", path, http.StatusNotFound)
 	}
 	return f, err
 }
