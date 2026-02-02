@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-func (c *Client) req(method, path string, body io.Reader, intercept func(*http.Request)) (rs *http.Response, err error) {
+func (c *Client) req(method, path string, body io.Reader, interceptors ...func(*http.Request)) (rs *http.Response, err error) {
 	var redo bool
 	var r *http.Request
-	var uri = PathEscape(Join(c.root, path))
+	uri := PathEscape(Join(c.root, path))
 	auth, body := c.auth.NewAuthenticator(body)
 	defer auth.Close()
 
@@ -30,8 +30,10 @@ func (c *Client) req(method, path string, body io.Reader, intercept func(*http.R
 			return
 		}
 
-		if intercept != nil {
-			intercept(r)
+		for _, interceptor := range interceptors {
+			if interceptor != nil {
+				interceptor(r)
+			}
 		}
 
 		if c.interceptor != nil {
@@ -60,7 +62,7 @@ func (c *Client) req(method, path string, body io.Reader, intercept func(*http.R
 }
 
 func (c *Client) mkcol(path string) (status int, err error) {
-	rs, err := c.req("MKCOL", path, nil, nil)
+	rs, err := c.req("MKCOL", path, nil)
 	if err != nil {
 		return
 	}
@@ -160,8 +162,8 @@ func (c *Client) copymove(method string, oldpath string, newpath string, overwri
 	return NewPathError(method, oldpath, s)
 }
 
-func (c *Client) put(path string, stream io.Reader) (status int, err error) {
-	rs, err := c.req("PUT", path, stream, nil)
+func (c *Client) put(path string, stream io.Reader, interceptors ...func(*http.Request)) (status int, err error) {
+	rs, err := c.req("PUT", path, stream, interceptors...)
 	if err != nil {
 		return
 	}

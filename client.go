@@ -2,6 +2,7 @@ package gowebdav
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -344,13 +345,20 @@ func (c *Client) Read(path string) ([]byte, error) {
 
 // ReadStream reads the stream for a given path
 func (c *Client) ReadStream(path string) (io.ReadCloser, error) {
+	rs, err := c.ReadResponse(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+	return rs.Body, nil
+}
+
+func (c *Client) ReadResponse(ctx context.Context, path string) (*http.Response, error) {
 	rs, err := c.req("GET", path, nil, nil)
 	if err != nil {
 		return nil, NewPathErrorErr("ReadStream", path, err)
 	}
-
 	if rs.StatusCode == 200 {
-		return rs.Body, nil
+		return rs, nil
 	}
 
 	rs.Body.Close()
@@ -399,8 +407,8 @@ func (c *Client) ReadStreamRange(path string, offset, length int64) (io.ReadClos
 }
 
 // Write writes data to a given path
-func (c *Client) Write(path string, data []byte, _ os.FileMode) (err error) {
-	s, err := c.put(path, bytes.NewReader(data))
+func (c *Client) Write(path string, data []byte, _ os.FileMode, interceptors ...func(*http.Request)) (err error) {
+	s, err := c.put(path, bytes.NewReader(data), interceptors...)
 	if err != nil {
 		return
 	}
@@ -429,13 +437,13 @@ func (c *Client) Write(path string, data []byte, _ os.FileMode) (err error) {
 }
 
 // WriteStream writes a stream
-func (c *Client) WriteStream(path string, stream io.Reader, _ os.FileMode) (err error) {
+func (c *Client) WriteStream(path string, stream io.Reader, _ os.FileMode, interceptors ...func(*http.Request)) (err error) {
 	err = c.createParentCollection(path)
 	if err != nil {
 		return err
 	}
 
-	s, err := c.put(path, stream)
+	s, err := c.put(path, stream, interceptors...)
 	if err != nil {
 		return err
 	}
