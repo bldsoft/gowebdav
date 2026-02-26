@@ -29,8 +29,10 @@ func (se StatusError) Error() string {
 // with the given status code.
 func IsErrCode(err error, code int) bool {
 	if pe, ok := err.(*os.PathError); ok {
-		se, ok := pe.Err.(StatusError)
-		return ok && se.Status == code
+		var se StatusError
+		if errors.As(pe.Err, &se) {
+			return se.Status == code
+		}
 	}
 	return false
 }
