@@ -56,6 +56,13 @@ func parseUint(s *string) uint {
 	return 0
 }
 
+func parseUint64(s *string) uint64 {
+	if n, e := strconv.ParseUint(*s, 10, 64); e == nil {
+		return n
+	}
+	return 0
+}
+
 func parseInt64(s *string) int64 {
 	if n, e := strconv.ParseInt(*s, 10, 64); e == nil {
 		return n

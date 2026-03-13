@@ -91,13 +91,15 @@ func (c *Client) Connect() error {
 }
 
 type props struct {
-	Status      string   `xml:"DAV: status"`
-	Name        string   `xml:"DAV: prop>displayname,omitempty"`
-	Type        xml.Name `xml:"DAV: prop>resourcetype>collection,omitempty"`
-	Size        string   `xml:"DAV: prop>getcontentlength,omitempty"`
-	ContentType string   `xml:"DAV: prop>getcontenttype,omitempty"`
-	ETag        string   `xml:"DAV: prop>getetag,omitempty"`
-	Modified    string   `xml:"DAV: prop>getlastmodified,omitempty"`
+	Status         string   `xml:"DAV: status"`
+	Name           string   `xml:"DAV: prop>displayname,omitempty"`
+	Type           xml.Name `xml:"DAV: prop>resourcetype>collection,omitempty"`
+	Size           string   `xml:"DAV: prop>getcontentlength,omitempty"`
+	ContentType    string   `xml:"DAV: prop>getcontenttype,omitempty"`
+	ETag           string   `xml:"DAV: prop>getetag,omitempty"`
+	Modified       string   `xml:"DAV: prop>getlastmodified,omitempty"`
+	QuotaUsed      string   `xml:"DAV: prop>quota-used-bytes,omitempty"`
+	QuotaAvailable string   `xml:"DAV: prop>quota-available-bytes,omitempty"`
 }
 
 type response struct {
@@ -185,6 +187,38 @@ func (c *Client) ReadDir(path string) ([]os.FileInfo, error) {
 		}
 	}
 	return files, err
+}
+
+func (c *Client) Quotas(path string) (used uint64, available uint64, err error) {
+	parse := func(resp interface{}) error {
+		r := resp.(*response)
+
+		if p := getProps(r, "200"); p != nil {
+			used = parseUint64(&p.QuotaUsed)
+			available = parseUint64(&p.QuotaAvailable)
+		} else if p := getProps(r, "404"); p != nil {
+			return NewPathError("Quotas", path, 404)
+		}
+
+		r.Props = nil
+		return nil
+	}
+
+	err = c.propfind(path, true,
+		`<d:propfind xmlns:d='DAV:'>
+			<d:prop>
+				<d:quota-available-bytes/>
+				<d:quota-used-bytes/>
+			</d:prop>
+		</d:propfind>`,
+		&response{},
+		parse)
+	if err != nil {
+		if _, ok := err.(*os.PathError); !ok {
+			err = NewPathErrorErr("Quotas", path, err)
+		}
+	}
+	return
 }
 
 // Stat returns the file stats for a specified path
