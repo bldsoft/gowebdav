@@ -246,14 +246,45 @@ func (c *Client) Stat(path string) (os.FileInfo, error) {
 	return f, err
 }
 
-// Remove removes a remote file
+// Remove removes a remote file.
 func (c *Client) Remove(path string) error {
-	return c.RemoveAll(path)
+	rs, err := c.req("DELETE", path, nil, nil)
+	if err != nil {
+		return NewPathError("Remove", path, 400)
+	}
+	err = rs.Body.Close()
+	if err != nil {
+		return err
+	}
+
+	if rs.StatusCode == 200 || rs.StatusCode == 204 || rs.StatusCode == 404 {
+		return nil
+	}
+
+	return NewPathError("Remove", path, rs.StatusCode)
 }
 
-// RemoveAll removes remote files
+// RemoveAll removes a remote resource. Directories are deleted recursively
+// using a trailing slash and Depth: infinity (required by nginx mod_dav).
 func (c *Client) RemoveAll(path string) error {
-	rs, err := c.req("DELETE", path, nil, nil)
+	info, err := c.Stat(path)
+	if err != nil {
+		if IsErrNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	deletePath := path
+	var interceptors []func(*http.Request)
+	if info.IsDir() {
+		deletePath = FixSlashes(path)
+		interceptors = append(interceptors, func(rq *http.Request) {
+			rq.Header.Add("Depth", "infinity")
+		})
+	}
+
+	rs, err := c.req("DELETE", deletePath, nil, interceptors...)
 	if err != nil {
 		return NewPathError("Remove", path, 400)
 	}
@@ -408,7 +439,12 @@ func (c *Client) ReadStreamRange(path string, offset, length int64) (io.ReadClos
 
 // Write writes data to a given path
 func (c *Client) Write(path string, data []byte, _ os.FileMode, interceptors ...func(*http.Request)) (err error) {
-	s, err := c.put(path, bytes.NewReader(data), interceptors...)
+	return c.WriteContext(context.Background(), path, data, 0, interceptors...)
+}
+
+// WriteContext writes data to a given path with context support
+func (c *Client) WriteContext(ctx context.Context, path string, data []byte, _ os.FileMode, interceptors ...func(*http.Request)) (err error) {
+	s, err := c.putContext(ctx, path, bytes.NewReader(data), interceptors...)
 	if err != nil {
 		return
 	}
@@ -424,7 +460,7 @@ func (c *Client) Write(path string, data []byte, _ os.FileMode, interceptors ...
 			return
 		}
 
-		s, err = c.put(path, bytes.NewReader(data))
+		s, err = c.putContext(ctx, path, bytes.NewReader(data))
 		if err != nil {
 			return
 		}
@@ -438,12 +474,17 @@ func (c *Client) Write(path string, data []byte, _ os.FileMode, interceptors ...
 
 // WriteStream writes a stream
 func (c *Client) WriteStream(path string, stream io.Reader, _ os.FileMode, interceptors ...func(*http.Request)) (err error) {
+	return c.WriteStreamContext(context.Background(), path, stream, 0, interceptors...)
+}
+
+// WriteStreamContext writes a stream with context support
+func (c *Client) WriteStreamContext(ctx context.Context, path string, stream io.Reader, _ os.FileMode, interceptors ...func(*http.Request)) (err error) {
 	err = c.createParentCollection(path)
 	if err != nil {
 		return err
 	}
 
-	s, err := c.put(path, stream, interceptors...)
+	s, err := c.putContext(ctx, path, stream, interceptors...)
 	if err != nil {
 		return err
 	}
