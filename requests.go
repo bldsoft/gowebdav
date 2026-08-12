@@ -1,6 +1,7 @@
 package gowebdav
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -9,6 +10,10 @@ import (
 )
 
 func (c *Client) req(method, path string, body io.Reader, interceptors ...func(*http.Request)) (rs *http.Response, err error) {
+	return c.reqContext(context.Background(), method, path, body, interceptors...)
+}
+
+func (c *Client) reqContext(ctx context.Context, method, path string, body io.Reader, interceptors ...func(*http.Request)) (rs *http.Response, err error) {
 	var redo bool
 	var r *http.Request
 	uri := PathEscape(Join(c.root, path))
@@ -16,7 +21,7 @@ func (c *Client) req(method, path string, body io.Reader, interceptors ...func(*
 	defer auth.Close()
 
 	for { // TODO auth.continue() strategy(true|n times|until)?
-		if r, err = http.NewRequest(method, uri, body); err != nil {
+		if r, err = http.NewRequestWithContext(ctx, method, uri, body); err != nil {
 			return
 		}
 
@@ -163,7 +168,11 @@ func (c *Client) copymove(method string, oldpath string, newpath string, overwri
 }
 
 func (c *Client) put(path string, stream io.Reader, interceptors ...func(*http.Request)) (status int, err error) {
-	rs, err := c.req("PUT", path, stream, interceptors...)
+	return c.putContext(context.Background(), path, stream, interceptors...)
+}
+
+func (c *Client) putContext(ctx context.Context, path string, stream io.Reader, interceptors ...func(*http.Request)) (status int, err error) {
+	rs, err := c.reqContext(ctx, "PUT", path, stream, interceptors...)
 	if err != nil {
 		return
 	}
